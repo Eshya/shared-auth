@@ -1,97 +1,183 @@
 use crate::claims::Claims;
 use crate::error::AuthError;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
-use std::env;
+use crate::blacklist::{TokenBlacklist, BlacklistReason};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use chrono::{Duration, Utc};
+use uuid::Uuid;
 
-pub struct JwtService;
+#[derive(Clone)]
+pub struct JwtService {
+    encoding_key: EncodingKey,
+    decoding_key: DecodingKey,
+    validation: Validation,
+    blacklist: TokenBlacklist,
+}
 
 impl JwtService {
-    /// Generate a new JWT token
-    pub fn generate_token(claims: &Claims) -> Result<String, AuthError> {
-        let jwt_secret = Self::get_jwt_secret()?;
-        
-        let token = encode(
-            &Header::default(),
-            claims,
-            &EncodingKey::from_secret(jwt_secret.as_bytes()),
-        )
-        .map_err(AuthError::TokenGeneration)?;
-
-        Ok(token)
-    }
-
-    /// Validate a JWT token and extract claims
-    pub fn validate_token(token: &str) -> Result<Claims, AuthError> {
-        let jwt_secret = Self::get_jwt_secret()?;
+    pub fn new(secret: &str) -> Self {
+        let encoding_key = EncodingKey::from_secret(secret.as_ref());
+        let decoding_key = DecodingKey::from_secret(secret.as_ref());
         
         let mut validation = Validation::new(Algorithm::HS256);
         validation.validate_exp = true;
         
-        let token_data = decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(jwt_secret.as_bytes()),
-            &validation,
-        )
-        .map_err(AuthError::TokenValidation)?;
+        Self {
+            encoding_key,
+            decoding_key,
+            validation,
+            blacklist: TokenBlacklist::new(),
+        }
+    }
 
-        Ok(token_data.claims)
+    pub fn with_blacklist(secret: &str, blacklist: TokenBlacklist) -> Self {
+        let mut service = Self::new(secret);
+        service.blacklist = blacklist;
+        service
+    }
+
+    /// Generate a new JWT token
+    pub fn generate_token(
+        &self,
+        user_id: i32,
+        email: String,
+        company_id: Option<i32>,
+        roles: Vec<String>,
+        expires_in_hours: Option<i64>,
+    ) -> Result<String, AuthError> {
+        let now = Utc::now();
+        let expiration = now + Duration::hours(expires_in_hours.unwrap_or(24)); // Default 24 hours
+        let jti = Uuid::new_v4().to_string(); // Generate unique JWT ID
+
+        let claims = Claims {
+            sub: user_id,
+            email,
+            company_id,
+            roles,
+            exp: expiration.timestamp() as usize,
+            iat: now.timestamp() as usize,
+            jti,
+            session_id: None,
+        };
+
+        encode(&Header::default(), &claims, &self.encoding_key)
+            .map_err(|e| AuthError::TokenGeneration(e.to_string()))
+    }
+
+    /// Generate a refresh token (longer expiration)
+    pub fn generate_refresh_token(
+        &self,
+        user_id: i32,
+        email: String,
+        company_id: Option<i32>,
+        roles: Vec<String>,
+    ) -> Result<String, AuthError> {
+        self.generate_token(user_id, email, company_id, roles, Some(24 * 7)) // 7 days
+    }
+
+    /// Validate and decode a JWT token
+    pub async fn validate_token(&self, token: &str) -> Result<Claims, AuthError> {
+        // First decode the token to get claims
+        let token_data = decode::<Claims>(token, &self.decoding_key, &self.validation)
+            .map_err(|e| AuthError::InvalidToken(e.to_string()))?;
+
+        let claims = token_data.claims;
+
+        // Check if token is blacklisted
+        if self.blacklist.is_blacklisted(&claims.jti).await {
+            return Err(AuthError::TokenRevoked);
+        }
+
+        // Check if token is expired (additional check)
+        if claims.is_expired() {
+            return Err(AuthError::TokenExpired);
+        }
+
+        Ok(claims)
+    }
+
+    /// Blacklist a token (logout)
+    pub async fn blacklist_token(&self, token: &str, reason: BlacklistReason) -> Result<(), AuthError> {
+        // Decode token to get claims (without validation to allow expired tokens)
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.validate_exp = false; // Allow expired tokens for blacklisting
+        
+        let token_data = decode::<Claims>(token, &self.decoding_key, &validation)
+            .map_err(|e| AuthError::InvalidToken(e.to_string()))?;
+
+        let claims = token_data.claims;
+        let expires_at = chrono::DateTime::from_timestamp(claims.exp as i64, 0)
+            .unwrap_or_else(|| Utc::now() + Duration::hours(24));
+
+        self.blacklist.blacklist_token(
+            claims.jti,
+            claims.sub,
+            expires_at,
+            reason,
+        ).await;
+
+        Ok(())
+    }
+
+    /// Blacklist all tokens for a user (logout all devices)
+    pub async fn blacklist_user_tokens(&self, user_id: i32, reason: BlacklistReason) {
+        self.blacklist.blacklist_user_tokens(user_id, reason).await;
+    }
+
+    /// Get blacklist reference for external use
+    pub fn get_blacklist(&self) -> &TokenBlacklist {
+        &self.blacklist
     }
 
     /// Extract token from Authorization header
-    pub fn extract_token_from_header(auth_header: &str) -> Result<&str, AuthError> {
-        if !auth_header.starts_with("Bearer ") {
-            return Err(AuthError::InvalidAuthHeader);
+    pub fn extract_token_from_header(auth_header: &str) -> Option<&str> {
+        if auth_header.starts_with("Bearer ") {
+            Some(&auth_header[7..])
+        } else {
+            None
         }
-        
-        let token = auth_header.trim_start_matches("Bearer ");
-        if token.is_empty() {
-            return Err(AuthError::MissingToken);
-        }
-        
-        Ok(token)
-    }
-
-    /// Get JWT secret from environment
-    fn get_jwt_secret() -> Result<String, AuthError> {
-        env::var("JWT_SECRET_KEY")
-            .or_else(|_| env::var("JWT_SECRET"))
-            .map_err(|_| AuthError::MissingJwtSecret)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::claims::Claims;
-    use chrono::{Duration, Utc};
 
-    #[test]
-    fn test_token_generation_and_validation() {
-        // Set test environment
-        env::set_var("JWT_SECRET", "test-secret-key");
+    #[tokio::test]
+    async fn test_token_generation_and_validation() {
+        let jwt_service = JwtService::new("test-secret");
         
-        // Create test claims
-        let expiration = Utc::now() + Duration::days(1);
-        let claims = Claims::new(123, expiration);
-        
-        // Generate token
-        let token = JwtService::generate_token(&claims).unwrap();
-        assert!(!token.is_empty());
-        
-        // Validate token
-        let decoded_claims = JwtService::validate_token(&token).unwrap();
-        assert_eq!(decoded_claims.sub, 123);
-        assert!(!decoded_claims.is_expired());
+        let token = jwt_service.generate_token(
+            1,
+            "test@example.com".to_string(),
+            Some(1),
+            vec!["user".to_string()],
+            Some(1),
+        ).unwrap();
+
+        let claims = jwt_service.validate_token(&token).await.unwrap();
+        assert_eq!(claims.sub, 1);
+        assert_eq!(claims.email, "test@example.com");
     }
 
-    #[test]
-    fn test_extract_token_from_header() {
-        let auth_header = "Bearer abc123def456";
-        let token = JwtService::extract_token_from_header(auth_header).unwrap();
-        assert_eq!(token, "abc123def456");
+    #[tokio::test]
+    async fn test_token_blacklisting() {
+        let jwt_service = JwtService::new("test-secret");
         
-        // Test invalid header
-        let invalid_header = "Invalid header";
-        assert!(JwtService::extract_token_from_header(invalid_header).is_err());
+        let token = jwt_service.generate_token(
+            1,
+            "test@example.com".to_string(),
+            Some(1),
+            vec!["user".to_string()],
+            Some(1),
+        ).unwrap();
+
+        // Token should be valid initially
+        assert!(jwt_service.validate_token(&token).await.is_ok());
+
+        // Blacklist the token
+        jwt_service.blacklist_token(&token, BlacklistReason::UserLogout).await.unwrap();
+
+        // Token should now be invalid
+        assert!(jwt_service.validate_token(&token).await.is_err());
     }
 } 
