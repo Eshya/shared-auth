@@ -10,3 +10,4 @@ pub use claims::{Claims, UserInfo, JwtClaims};
 pub use error::AuthError;
 pub use jwt::JwtService;
 pub use middleware::{JwtAuth, extract_claims};
+pub use blacklist::cleanup_blacklist_task;
