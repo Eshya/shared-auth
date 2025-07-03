@@ -14,7 +14,7 @@ pub struct JwtService {
 }
 
 impl JwtService {
-    pub fn new(secret: &str) -> Self {
+    pub fn new(secret: &str, blacklist: TokenBlacklist) -> Self {
         let encoding_key = EncodingKey::from_secret(secret.as_ref());
         let decoding_key = DecodingKey::from_secret(secret.as_ref());
         
@@ -25,14 +25,8 @@ impl JwtService {
             encoding_key,
             decoding_key,
             validation,
-            blacklist: TokenBlacklist::new(),
+            blacklist,
         }
-    }
-
-    pub fn with_blacklist(secret: &str, blacklist: TokenBlacklist) -> Self {
-        let mut service = Self::new(secret);
-        service.blacklist = blacklist;
-        service
     }
 
     /// Generate a new JWT token
@@ -113,14 +107,15 @@ impl JwtService {
             claims.sub,
             expires_at,
             reason,
-        ).await;
+        ).await.map_err(|e| AuthError::DatabaseError(e.to_string()))?;
 
         Ok(())
     }
 
     /// Blacklist all tokens for a user (logout all devices)
-    pub async fn blacklist_user_tokens(&self, user_id: i32, reason: BlacklistReason) {
-        self.blacklist.blacklist_user_tokens(user_id, reason).await;
+    pub async fn blacklist_user_tokens(&self, user_id: i32, reason: BlacklistReason) -> Result<(), AuthError> {
+        self.blacklist.blacklist_user_tokens(user_id, reason).await
+            .map_err(|e| AuthError::DatabaseError(e.to_string()))
     }
 
     /// Get blacklist reference for external use
@@ -141,10 +136,37 @@ impl JwtService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::AuthDbPool;
+    use crate::config::get_auth_config;
+
+    async fn create_test_jwt_service() -> JwtService {
+        // For tests, we'll use a mock or in-memory database
+        // In real tests, you'd set up a test database
+        let config = get_auth_config().unwrap_or_else(|_| {
+            // Fallback config for tests
+            crate::config::AuthConfig {
+                database: crate::config::AuthDatabaseSettings {
+                    connection_string: secrecy::Secret::new("postgresql://test:test@localhost/test_auth".to_string()),
+                },
+                jwt: crate::config::JwtSettings {
+                    secret: secrecy::Secret::new("test-secret".to_string()),
+                    expiration_hours: 24,
+                },
+            }
+        });
+        
+        // Create a test blacklist (this would fail in real tests without proper DB setup)
+        let blacklist = TokenBlacklist::new(
+            crate::database::establish_auth_connection(&config).unwrap()
+        );
+        
+        JwtService::new("test-secret", blacklist)
+    }
 
     #[tokio::test]
+    #[ignore] // Ignore by default since it requires database setup
     async fn test_token_generation_and_validation() {
-        let jwt_service = JwtService::new("test-secret");
+        let jwt_service = create_test_jwt_service().await;
         
         let token = jwt_service.generate_token(
             1,
@@ -160,8 +182,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Ignore by default since it requires database setup
     async fn test_token_blacklisting() {
-        let jwt_service = JwtService::new("test-secret");
+        let jwt_service = create_test_jwt_service().await;
         
         let token = jwt_service.generate_token(
             1,
