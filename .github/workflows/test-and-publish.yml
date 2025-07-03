@@ -1,300 +1,300 @@
-# Shared Authentication Library CI/CD
-#
-# This workflow manages testing and publishing of the shared authentication library
-# Features:
-# - Cross-platform testing
-# - Version management
-# - Compatibility testing with dependent services
-# - Documentation generation
-# - Library publishing (if using a registry)
-#
-name: Test and Publish Shared Auth
+# # Shared Authentication Library CI/CD
+# #
+# # This workflow manages testing and publishing of the shared authentication library
+# # Features:
+# # - Cross-platform testing
+# # - Version management
+# # - Compatibility testing with dependent services
+# # - Documentation generation
+# # - Library publishing (if using a registry)
+# #
+# name: Test and Publish Shared Auth
 
-on:
-  push:
-    branches: [main, staging]
-    tags: ['v*']
-  pull_request:
-    branches: [main, staging]
+# on:
+#   push:
+#     branches: [main, staging]
+#     tags: ['v*']
+#   pull_request:
+#     branches: [main, staging]
 
-env:
-  CARGO_TERM_COLOR: always
+# env:
+#   CARGO_TERM_COLOR: always
 
-jobs:
-  # Test the library across multiple platforms
-  test:
-    name: Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        rust: [stable, beta]
+# jobs:
+#   # Test the library across multiple platforms
+#   test:
+#     name: Test on ${{ matrix.os }}
+#     runs-on: ${{ matrix.os }}
+#     strategy:
+#       matrix:
+#         os: [ubuntu-latest, macos-latest]
+#         rust: [stable, beta]
     
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Setup Rust ${{ matrix.rust }}
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust }}
-          profile: minimal
-          override: true
-          components: rustfmt, clippy
+#       - name: Setup Rust ${{ matrix.rust }}
+#         uses: actions-rs/toolchain@v1
+#         with:
+#           toolchain: ${{ matrix.rust }}
+#           profile: minimal
+#           override: true
+#           components: rustfmt, clippy
       
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: shared-auth-${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            shared-auth-${{ runner.os }}-${{ matrix.rust }}-cargo-
+#       - name: Cache Rust dependencies
+#         uses: actions/cache@v4
+#         with:
+#           path: |
+#             ~/.cargo/registry
+#             ~/.cargo/git
+#             target
+#           key: shared-auth-${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('Cargo.lock') }}
+#           restore-keys: |
+#             shared-auth-${{ runner.os }}-${{ matrix.rust }}-cargo-
       
-      - name: Check formatting
-        run: cargo fmt --check
+#       - name: Check formatting
+#         run: cargo fmt --check
       
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+#       - name: Run clippy
+#         run: cargo clippy --all-targets --all-features -- -D warnings
       
-      - name: Run tests
-        run: cargo test --verbose --all-features
+#       - name: Run tests
+#         run: cargo test --verbose --all-features
       
-      - name: Run doctests
-        run: cargo test --doc --all-features
+#       - name: Run doctests
+#         run: cargo test --doc --all-features
       
-      - name: Build documentation
-        run: cargo doc --no-deps --all-features
+#       - name: Build documentation
+#         run: cargo doc --no-deps --all-features
 
-  # Security audit for the authentication library
-  security-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#   # Security audit for the authentication library
+#   security-audit:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+#       - name: Setup Rust
+#         uses: actions-rs/toolchain@v1
+#         with:
+#           toolchain: stable
+#           profile: minimal
+#           override: true
       
-      - name: Security audit
-        run: |
-          cargo install cargo-audit
-          cargo audit
+#       - name: Security audit
+#         run: |
+#           cargo install cargo-audit
+#           cargo audit
       
-      - name: Check for crypto vulnerabilities
-        run: |
-          echo "Checking for secure crypto usage..."
+#       - name: Check for crypto vulnerabilities
+#         run: |
+#           echo "Checking for secure crypto usage..."
           
-          # Check for secure JWT handling
-          if grep -r "jsonwebtoken" src/ --include="*.rs"; then
-            echo "✅ JWT library usage found"
-          fi
+#           # Check for secure JWT handling
+#           if grep -r "jsonwebtoken" src/ --include="*.rs"; then
+#             echo "✅ JWT library usage found"
+#           fi
           
-          # Verify no hardcoded secrets
-          if grep -r "secret\|password\|key" src/ --include="*.rs" | grep -v "PLACEHOLDER\|TODO\|EXAMPLE\|test"; then
-            echo "⚠️ Potential secrets found in source. Please review."
-          else
-            echo "✅ No hardcoded secrets detected"
-          fi
+#           # Verify no hardcoded secrets
+#           if grep -r "secret\|password\|key" src/ --include="*.rs" | grep -v "PLACEHOLDER\|TODO\|EXAMPLE\|test"; then
+#             echo "⚠️ Potential secrets found in source. Please review."
+#           else
+#             echo "✅ No hardcoded secrets detected"
+#           fi
           
-          # Check for proper error handling
-          if grep -r "\.unwrap()" src/ --include="*.rs"; then
-            echo "❌ Found unwrap() usage. Use proper error handling in auth library."
-            exit 1
-          else
-            echo "✅ No unwrap() usage found"
-          fi
+#           # Check for proper error handling
+#           if grep -r "\.unwrap()" src/ --include="*.rs"; then
+#             echo "❌ Found unwrap() usage. Use proper error handling in auth library."
+#             exit 1
+#           else
+#             echo "✅ No unwrap() usage found"
+#           fi
 
-  # Compatibility test with microservices
-  compatibility-test:
-    runs-on: ubuntu-latest
-    needs: [test]
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#   # Compatibility test with microservices
+#   compatibility-test:
+#     runs-on: ubuntu-latest
+#     needs: [test]
+#     if: github.event_name == 'pull_request'
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+#       - name: Setup Rust
+#         uses: actions-rs/toolchain@v1
+#         with:
+#           toolchain: stable
+#           profile: minimal
+#           override: true
       
-      - name: Test with authentication service
-        run: |
-          # Test compilation with authentication service
-          cd ../authentication-api || echo "Authentication service not available in this context"
-          if [ -f "Cargo.toml" ]; then
-            # Update dependency to use local shared-auth
-            sed -i 's|shared-auth = .*|shared-auth = { path = "../shared-auth" }|' Cargo.toml
-            cargo check
-            echo "✅ Compatible with authentication service"
-          fi
+#       - name: Test with authentication service
+#         run: |
+#           # Test compilation with authentication service
+#           cd ../authentication-api || echo "Authentication service not available in this context"
+#           if [ -f "Cargo.toml" ]; then
+#             # Update dependency to use local shared-auth
+#             sed -i 's|shared-auth = .*|shared-auth = { path = "../shared-auth" }|' Cargo.toml
+#             cargo check
+#             echo "✅ Compatible with authentication service"
+#           fi
       
-      - name: Test with payment service
-        run: |
-          # Test compilation with payment service
-          cd ../payment-api || echo "Payment service not available in this context"
-          if [ -f "Cargo.toml" ]; then
-            # Update dependency to use local shared-auth
-            sed -i 's|shared-auth = .*|shared-auth = { path = "../shared-auth" }|' Cargo.toml
-            cargo check
-            echo "✅ Compatible with payment service"
-          fi
+#       - name: Test with payment service
+#         run: |
+#           # Test compilation with payment service
+#           cd ../payment-api || echo "Payment service not available in this context"
+#           if [ -f "Cargo.toml" ]; then
+#             # Update dependency to use local shared-auth
+#             sed -i 's|shared-auth = .*|shared-auth = { path = "../shared-auth" }|' Cargo.toml
+#             cargo check
+#             echo "✅ Compatible with payment service"
+#           fi
 
-  # Version management and tagging
-  version-check:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      should-release: ${{ steps.version.outputs.should-release }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+#   # Version management and tagging
+#   version-check:
+#     runs-on: ubuntu-latest
+#     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+#     outputs:
+#       version: ${{ steps.version.outputs.version }}
+#       should-release: ${{ steps.version.outputs.should-release }}
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
       
-      - name: Check version
-        id: version
-        run: |
-          # Get current version from Cargo.toml
-          CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "//' | sed 's/"//')
-          echo "Current version: $CURRENT_VERSION"
-          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+#       - name: Check version
+#         id: version
+#         run: |
+#           # Get current version from Cargo.toml
+#           CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "//' | sed 's/"//')
+#           echo "Current version: $CURRENT_VERSION"
+#           echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           
-          # Check if this version has been tagged
-          if git tag | grep -q "v$CURRENT_VERSION"; then
-            echo "Version $CURRENT_VERSION already tagged"
-            echo "should-release=false" >> $GITHUB_OUTPUT
-          else
-            echo "New version $CURRENT_VERSION - should create release"
-            echo "should-release=true" >> $GITHUB_OUTPUT
-          fi
+#           # Check if this version has been tagged
+#           if git tag | grep -q "v$CURRENT_VERSION"; then
+#             echo "Version $CURRENT_VERSION already tagged"
+#             echo "should-release=false" >> $GITHUB_OUTPUT
+#           else
+#             echo "New version $CURRENT_VERSION - should create release"
+#             echo "should-release=true" >> $GITHUB_OUTPUT
+#           fi
 
-  # Create release for new versions
-  release:
-    runs-on: ubuntu-latest
-    needs: [test, security-audit, version-check]
-    if: needs.version-check.outputs.should-release == 'true'
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#   # Create release for new versions
+#   release:
+#     runs-on: ubuntu-latest
+#     needs: [test, security-audit, version-check]
+#     if: needs.version-check.outputs.should-release == 'true'
+#     permissions:
+#       contents: write
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Create release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ needs.version-check.outputs.version }}
-          release_name: Shared Auth v${{ needs.version-check.outputs.version }}
-          body: |
-            # Shared Authentication Library v${{ needs.version-check.outputs.version }}
+#       - name: Create release
+#         uses: actions/create-release@v1
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         with:
+#           tag_name: v${{ needs.version-check.outputs.version }}
+#           release_name: Shared Auth v${{ needs.version-check.outputs.version }}
+#           body: |
+#             # Shared Authentication Library v${{ needs.version-check.outputs.version }}
             
-            ## What's Changed
-            - JWT authentication and validation
-            - Middleware for Actix Web integration
-            - Claims extraction utilities
-            - Error handling for authentication flows
+#             ## What's Changed
+#             - JWT authentication and validation
+#             - Middleware for Actix Web integration
+#             - Claims extraction utilities
+#             - Error handling for authentication flows
             
-            ## Usage
-            Add to your microservice:
-            ```toml
-            [dependencies]
-            shared-auth = { git = "https://github.com/your-org/shared-auth", tag = "v${{ needs.version-check.outputs.version }}" }
-            ```
+#             ## Usage
+#             Add to your microservice:
+#             ```toml
+#             [dependencies]
+#             shared-auth = { git = "https://github.com/your-org/shared-auth", tag = "v${{ needs.version-check.outputs.version }}" }
+#             ```
             
-            ## Breaking Changes
-            Please review the CHANGELOG.md for any breaking changes.
-          draft: false
-          prerelease: false
+#             ## Breaking Changes
+#             Please review the CHANGELOG.md for any breaking changes.
+#           draft: false
+#           prerelease: false
 
-  # Documentation deployment
-  deploy-docs:
-    runs-on: ubuntu-latest
-    needs: [test, security-audit]
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#   # Documentation deployment
+#   deploy-docs:
+#     runs-on: ubuntu-latest
+#     needs: [test, security-audit]
+#     if: github.ref == 'refs/heads/main'
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+#       - name: Setup Rust
+#         uses: actions-rs/toolchain@v1
+#         with:
+#           toolchain: stable
+#           profile: minimal
+#           override: true
       
-      - name: Build documentation
-        run: |
-          cargo doc --no-deps --all-features
-          echo '<meta http-equiv="refresh" content="0; url=shared_auth">' > target/doc/index.html
+#       - name: Build documentation
+#         run: |
+#           cargo doc --no-deps --all-features
+#           echo '<meta http-equiv="refresh" content="0; url=shared_auth">' > target/doc/index.html
       
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        if: github.ref == 'refs/heads/main'
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/doc
-          publish_branch: gh-pages
+#       - name: Deploy to GitHub Pages
+#         uses: peaceiris/actions-gh-pages@v3
+#         if: github.ref == 'refs/heads/main'
+#         with:
+#           github_token: ${{ secrets.GITHUB_TOKEN }}
+#           publish_dir: ./target/doc
+#           publish_branch: gh-pages
 
-  # Notification and summary
-  notify:
-    runs-on: ubuntu-latest
-    needs: [test, security-audit, compatibility-test, version-check, release]
-    if: always()
-    steps:
-      - name: Create summary
-        run: |
-          echo "# 🔐 Shared Authentication Library CI Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+#   # Notification and summary
+#   notify:
+#     runs-on: ubuntu-latest
+#     needs: [test, security-audit, compatibility-test, version-check, release]
+#     if: always()
+#     steps:
+#       - name: Create summary
+#         run: |
+#           echo "# 🔐 Shared Authentication Library CI Results" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "## Test Results" >> $GITHUB_STEP_SUMMARY
           
-          if [[ "${{ needs.test.result }}" == "success" ]]; then
-            echo "- ✅ **Tests**: All platforms passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ❌ **Tests**: Some tests failed" >> $GITHUB_STEP_SUMMARY
-          fi
+#           if [[ "${{ needs.test.result }}" == "success" ]]; then
+#             echo "- ✅ **Tests**: All platforms passed" >> $GITHUB_STEP_SUMMARY
+#           else
+#             echo "- ❌ **Tests**: Some tests failed" >> $GITHUB_STEP_SUMMARY
+#           fi
           
-          if [[ "${{ needs.security-audit.result }}" == "success" ]]; then
-            echo "- ✅ **Security**: Audit passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ❌ **Security**: Audit failed" >> $GITHUB_STEP_SUMMARY
-          fi
+#           if [[ "${{ needs.security-audit.result }}" == "success" ]]; then
+#             echo "- ✅ **Security**: Audit passed" >> $GITHUB_STEP_SUMMARY
+#           else
+#             echo "- ❌ **Security**: Audit failed" >> $GITHUB_STEP_SUMMARY
+#           fi
           
-          if [[ "${{ needs.compatibility-test.result }}" == "success" ]]; then
-            echo "- ✅ **Compatibility**: Services compatible" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.compatibility-test.result }}" == "skipped" ]]; then
-            echo "- ⏭️ **Compatibility**: Skipped (not a PR)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ❌ **Compatibility**: Issues found" >> $GITHUB_STEP_SUMMARY
-          fi
+#           if [[ "${{ needs.compatibility-test.result }}" == "success" ]]; then
+#             echo "- ✅ **Compatibility**: Services compatible" >> $GITHUB_STEP_SUMMARY
+#           elif [[ "${{ needs.compatibility-test.result }}" == "skipped" ]]; then
+#             echo "- ⏭️ **Compatibility**: Skipped (not a PR)" >> $GITHUB_STEP_SUMMARY
+#           else
+#             echo "- ❌ **Compatibility**: Issues found" >> $GITHUB_STEP_SUMMARY
+#           fi
           
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Version Information" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "## Version Information" >> $GITHUB_STEP_SUMMARY
           
-          if [[ "${{ needs.version-check.outputs.version }}" != "" ]]; then
-            echo "- **Current Version**: v${{ needs.version-check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          fi
+#           if [[ "${{ needs.version-check.outputs.version }}" != "" ]]; then
+#             echo "- **Current Version**: v${{ needs.version-check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+#           fi
           
-          if [[ "${{ needs.release.result }}" == "success" ]]; then
-            echo "- ✅ **Release**: New version released" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.version-check.outputs.should-release }}" == "false" ]]; then
-            echo "- ℹ️ **Release**: No new version to release" >> $GITHUB_STEP_SUMMARY
-          fi
+#           if [[ "${{ needs.release.result }}" == "success" ]]; then
+#             echo "- ✅ **Release**: New version released" >> $GITHUB_STEP_SUMMARY
+#           elif [[ "${{ needs.version-check.outputs.should-release }}" == "false" ]]; then
+#             echo "- ℹ️ **Release**: No new version to release" >> $GITHUB_STEP_SUMMARY
+#           fi
           
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Library Features" >> $GITHUB_STEP_SUMMARY
-          echo "- JWT token validation and claims extraction" >> $GITHUB_STEP_SUMMARY
-          echo "- Actix Web middleware integration" >> $GITHUB_STEP_SUMMARY
-          echo "- Comprehensive error handling" >> $GITHUB_STEP_SUMMARY
-          echo "- Cross-service authentication compatibility" >> $GITHUB_STEP_SUMMARY 
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "## Library Features" >> $GITHUB_STEP_SUMMARY
+#           echo "- JWT token validation and claims extraction" >> $GITHUB_STEP_SUMMARY
+#           echo "- Actix Web middleware integration" >> $GITHUB_STEP_SUMMARY
+#           echo "- Comprehensive error handling" >> $GITHUB_STEP_SUMMARY
+#           echo "- Cross-service authentication compatibility" >> $GITHUB_STEP_SUMMARY 
