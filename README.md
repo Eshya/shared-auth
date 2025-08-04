@@ -542,9 +542,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For support and questions:
 
-- 📧 Email: achmadayas@gmail.com
-- 📖 Documentation: [docs.bliink.com](https://docs.bliink.com)
-- 🐛 Issues: [GitHub Issues](https://github.com/devbliink/shared-auth/issues)
+- 📧 Email: support@bliink.id
 
 ---
 
