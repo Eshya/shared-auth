@@ -114,7 +114,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-shared-auth = { git = "https://github.com/devbliink/shared-auth.git", branch = "staging" }
+shared-auth = { git = "https://github.com/Eshya/shared-auth.git", branch = "staging" }
 ```
 
 ## ⚙️ Configuration
@@ -131,7 +131,7 @@ shared-auth = { git = "https://github.com/devbliink/shared-auth.git", branch = "
 
 ```env
 # Authentication Database (separate from business logic DB)
-AUTH_DATABASE_URL=postgresql://user:password@localhost:5432/bliink_auth
+AUTH_DATABASE_URL=postgresql://user:password@localhost:5432/auth
 
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-here
@@ -494,7 +494,7 @@ async fn logout(
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/devbliink/shared-auth.git
+   git clone https://github.com/Eshya/shared-auth.git
    cd shared-auth
    ```
 
@@ -539,12 +539,6 @@ cargo test test_token_generation_and_validation
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🆘 Support
-
-For support and questions:
-
-- 📧 Email: support@bliink.id
-
----
 
 **🔐 Secure • ⚡ Fast • 🔧 Simple**
 
